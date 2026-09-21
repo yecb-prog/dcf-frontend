@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@theme inline { --font-serif: var(--font-serif); --font-mono: var(--font-mono); }
 
 :root {
   --background: #ffffff;
