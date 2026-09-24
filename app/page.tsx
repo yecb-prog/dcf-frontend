@@ -69,12 +69,24 @@ export default function Home() {
         wacc_override: overrideWacc ? waccValue : null,
       };
  
-      const [dcfRes, sensRes, growthRes] = await Promise.all([
-        fetch(`${API_BASE}/api/dcf`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        }),
+      // Fetch /api/dcf FIRST, alone. This is what actually calls Yahoo
+      // Finance and populates the backend's cache for this ticker. Firing
+      // all three endpoints at once (the old approach) meant three
+      // simultaneous, uncached calls to Yahoo racing each other for the
+      // same ticker -- which looks like abusive traffic to Yahoo's rate
+      // limiter and can trigger "Invalid Crumb" / 429 errors. Waiting for
+      // this one to finish first means the other two hit the warm cache
+      // instead of hitting Yahoo again.
+      const dcfRes = await fetch(`${API_BASE}/api/dcf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!dcfRes.ok) throw new Error((await dcfRes.json()).detail || "DCF request failed");
+      const dcfData = await dcfRes.json();
+      setResult(dcfData);
+ 
+      const [sensRes, growthRes] = await Promise.all([
         fetch(`${API_BASE}/api/sensitivity`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -100,11 +112,9 @@ export default function Home() {
         }),
       ]);
  
-      if (!dcfRes.ok) throw new Error((await dcfRes.json()).detail || "DCF request failed");
       if (!sensRes.ok) throw new Error((await sensRes.json()).detail || "Sensitivity request failed");
       if (!growthRes.ok) throw new Error((await growthRes.json()).detail || "Implied growth request failed");
  
-      setResult(await dcfRes.json());
       setGrid(await sensRes.json());
       setImpliedGrowth(await growthRes.json());
     } catch (e: any) {
